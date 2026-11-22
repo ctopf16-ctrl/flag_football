@@ -30,7 +30,7 @@ Open the link and turn your phone sideways. For the best experience, add it to y
 |---|---|---|
 | Snap | Click the field or **HIKE** | Space or Enter |
 | Throw | Click, drag back to aim, release | |
-| Bullet pass | Right-click while aiming | Space or B while aiming |
+| Bullet / regular pass | Right-click to switch, any time the QB has the ball (before the snap, before aiming, or mid-aim). Each play starts as regular. | B (or Space after the snap) |
 | Hand off | Click the runner | |
 | QB run | Drag forward, or aim backward | |
 | Steer | Hold and drag | W / S or ↑ / ↓ |

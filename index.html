@@ -184,7 +184,7 @@ td:last-child{text-align:right;color:#ffd23f}
   <div id="speeds"><button class="btn sel" data-s="0">NORMAL</button><button class="btn alt" data-s="1">SLOW</button><button class="btn alt" data-s="2">SLOWER</button></div>
   <div style="margin-top:calc(var(--u)*6)"><button class="btn" id="start">KICK OFF ▶</button><button class="btn alt" id="startMk">✎ PLAY MAKER</button><button class="btn alt" id="startStudy">📖 STUDY</button></div>
   <div class="sm mut tHint" style="margin-top:calc(var(--u)*8)">THROW: PULL BACK, AIM, RELEASE · 2ND FINGER TAP = BULLET<br>HAND OFF: TAP THE RUNNER · QB RUN: PUSH FORWARD OR AIM BACKWARD<br>RUN: HOLD + DRAG TO STEER · FLICK UP/DOWN TO JUKE</div>
-  <div class="sm mut dHint" style="margin-top:calc(var(--u)*8)">THROW: CLICK, DRAG BACK, RELEASE · RIGHT-CLICK = BULLET<br>HAND OFF: CLICK THE RUNNER · QB RUN: DRAG FORWARD<br>RUN: W/S STEER · SPACE JUKE · A STUTTER · D BURST<br>SPACE = SNAP · F = FULLSCREEN</div>
+  <div class="sm mut dHint" style="margin-top:calc(var(--u)*8)">THROW: DRAG BACK + RELEASE · RIGHT-CLICK = BULLET/REGULAR<br>HAND OFF: CLICK THE RUNNER · QB RUN: DRAG FORWARD<br>RUN: W/S STEER · SPACE JUKE · A STUTTER · D BURST<br>SPACE = SNAP · F = FULLSCREEN</div>
  </div></div>
 
  <div class="ov" id="call">
@@ -1040,7 +1040,7 @@ function toCall(){
  cards.scrollTop=keep;
  $('#call').classList.add('on');
 }
-function startPlay(id){const p=allPlays().find(q=>q.id===id);if(!p)return;setupPlay(withVars(p));$('#call').classList.remove('on');G.phase='pre';$('#preBar').classList.add('on');}
+function startPlay(id){const p=allPlays().find(q=>q.id===id);if(!p)return;nextBullet=false;setupPlay(withVars(p));$('#call').classList.remove('on');G.phase='pre';$('#preBar').classList.add('on');}
 document.querySelectorAll('#tabs .btn[data-t]').forEach(b=>b.onclick=()=>{G.tab=b.dataset.t;document.querySelectorAll('#tabs .btn[data-t]').forEach(x=>{x.classList.toggle('sel',x===b);x.classList.toggle('alt',x!==b)});toCall()});
 $('#mkBtn').onclick=()=>openMaker();
 let LSEL=null;
@@ -1319,7 +1319,7 @@ function setInput(t){const m=t==='mouse'?'mouse':(t==='touch'||t==='pen')?'touch
 document.addEventListener('pointerdown',e=>setInput(e.pointerType),true);
 function cpos(e){const r=cv.getBoundingClientRect();return[(e.clientX-r.left)/r.width*W,(e.clientY-r.top)/r.height*H]}
 function toWorld(sx,sy){return[(sy-FT)/S,(sx/S+cam)-G.los]}
-cv.addEventListener('pointerdown',e=>{setInput(e.pointerType);if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();unlockAudio();const [x,y]=cpos(e);const now=performance.now();
+cv.addEventListener('pointerdown',e=>{setInput(e.pointerType);if(e.pointerType==='mouse'&&e.button!==0){if(e.button===2)toggleBullet();return}e.preventDefault();unlockAudio();const [x,y]=cpos(e);const now=performance.now();
  const p={id:e.pointerId,sx:x,sy:y,cx:x,cy:y,t:now,moved:false,trail:[[x,y,now]],maxBack:0};PTRS.set(e.pointerId,p);
  try{cv.setPointerCapture(e.pointerId)}catch(_){}
  if(G.phase==='pre'){snap();p.fromSnap=true;return}
@@ -1327,14 +1327,17 @@ cv.addEventListener('pointerdown',e=>{setInput(e.pointerType);if(e.pointerType==
  if(G.phase==='live'&&BALL.st==='qb'&&aim&&aim!==p){aim.bullet=!aim.bullet;p.bulletTap=true;beep(aim.bullet?990:500,.05,'square');return}
  if(G.phase==='run'){p.role='steer';p.anchor=y-steer*STEER_PX}
 });
-cv.addEventListener('pointermove',e=>{const p=PTRS.get(e.pointerId);if(!p)return;const [x,y]=cpos(e);const now=performance.now();
+cv.addEventListener('pointermove',e=>{
+ // right button pressed while the left is held to aim: browsers report that extra button as a pointermove, not a new pointerdown
+ if(e.pointerType==='mouse'&&e.button===2&&(e.buttons&2))toggleBullet();
+ const p=PTRS.get(e.pointerId);if(!p)return;const [x,y]=cpos(e);const now=performance.now();
  p.cx=x;p.cy=y;p.trail.push([x,y,now]);while(p.trail.length>2&&now-p.trail[0][2]>140)p.trail.shift();
  if(Math.hypot(x-p.sx,y-p.sy)>6)p.moved=true;p.maxBack=Math.max(p.maxBack,p.sx-x);
  if(p.bulletTap)return;
  if(G.phase==='live'&&BALL.st==='qb'&&p.moved){
   const fwd=x-p.sx;
   if(aim!==p&&p.maxBack<10&&fwd>26&&fwd>1.4*Math.abs(y-p.sy)){tryScramble(p);return}
-  if(!aim)aim=p;
+  if(!aim){aim=p;p.bullet=nextBullet}
  }
  if(G.phase==='run'){
   if(!p.role){p.role='steer';p.anchor=y-steer*STEER_PX;p.trail=[[x,y,now]]}
@@ -1361,10 +1364,15 @@ function up(e){const p=PTRS.get(e.pointerId);if(!p)return;PTRS.delete(e.pointerI
 cv.addEventListener('pointerup',up);
 cv.addEventListener('pointercancel',e=>{const p=PTRS.get(e.pointerId);PTRS.delete(e.pointerId);if(aim===p){aim=null;aimHold=0}if(p&&p.role)steer=0});
 // ===== desktop: mouse buttons + keyboard =====
-// Mouse can't do a second-finger tap, so right-click (or Space/B) while aiming toggles the bullet pass.
+// A mouse can't do a second-finger tap, so right-click (or B, or Space while live) switches the throw type
+// between regular and bullet any time the QB has the ball: before the snap, before aiming, or mid-aim.
+// It goes back to regular on every new play, like the phone version.
 cv.addEventListener('contextmenu',e=>e.preventDefault());
-cv.addEventListener('mousedown',e=>{if(e.button===2)toggleBullet()});
-function toggleBullet(){if(G.phase==='live'&&BALL.st==='qb'&&aim){aim.bullet=!aim.bullet;beep(aim.bullet?990:500,.05,'square');return true}return false}
+let nextBullet=false;
+function toggleBullet(){
+ if(!(G.phase==='pre'||(G.phase==='live'&&BALL.st==='qb')))return false;
+ nextBullet=!(aim?aim.bullet:nextBullet);if(aim)aim.bullet=nextBullet;
+ beep(nextBullet?990:500,.05,'square');if(!aim)showMsg(nextBullet?'BULLET PASS':'REGULAR PASS');return true}
 const KEYS={},STEER_KEYS=['ArrowUp','ArrowDown','KeyW','KeyS'];let kbSteerOn=false;
 const isTyping=e=>{const t=e.target;return !!(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))};
 function toggleFS(){try{if(document.fullscreenElement)document.exitFullscreen();else if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{})}catch(e){}}
@@ -1379,7 +1387,7 @@ window.addEventListener('keydown',e=>{
  else if($('#banner').classList.contains('on')&&(k==='Enter'||k===' ')){ // one button (NEXT ▶ etc.): Enter/Space presses it
   const bs=$('#bBtns').querySelectorAll('.btn');if(bs.length===1&&!e.repeat)bs[0].click();used=true}
  else if(G.phase==='pre'&&(k===' '||k==='Enter')){if(!$('#vPick').classList.contains('on')&&!e.repeat){unlockAudio();snap()}used=true}
- else if(G.phase==='live'&&(k===' '||c==='KeyB')){if(!e.repeat)toggleBullet();used=true}
+ else if((G.phase==='live'&&k===' ')||((G.phase==='pre'||G.phase==='live')&&c==='KeyB')){if(!e.repeat)toggleBullet();used=true}
  else if(G.phase==='run'){
   if(STEER_KEYS.includes(c))used=true;
   else if((k===' '||c==='KeyJ')){if(!e.repeat&&jukeCD<=0)doJuke(awayDir());used=true}
@@ -1490,7 +1498,7 @@ function drawBottom(){
  const y=FT+25*S+4;let h='',h2='';
  const M=INPUT==='mouse',TAPW=M?'CLICK':'TAP',SNAPW=M?'CLICK OR SPACE TO SNAP':'TAP THE FIELD OR HIKE TO SNAP';
  if(G.phase==='pre'){h=`KEY: ${P.mine?P.key:relab(P.key)}`;h2=P.vars?'USE THE BUTTONS BELOW TO SWAP ROUTES · '+SNAPW:P.idea&&!IDEA_ST[P.id]?'NEW PLAY · '+SNAPW:SNAPW;txt(G.rushOn?'RUSHER COMING · QB CAN RUN':'NO RUSH · QB MUST THROW',W/2,FT+6,G.rushOn?'#ff8a8a':'#9fe0ff','center');}
- else if(G.phase==='live'){h=M?'DRAG BACK TO AIM · RELEASE TO THROW · RIGHT-CLICK = BULLET':'PULL BACK TO AIM · RELEASE TO THROW · 2ND FINGER = BULLET';h2=(P.runners.length?`${TAPW} ${P.runners.map(DL).join('/')} TO HAND OFF`:'')+(G.rushOn?(P.runners.length?' · ':'')+(M?'DRAG FORWARD, AIM BACKWARD OR CLICK QB TO RUN':'PUSH FORWARD, AIM BACKWARD OR TAP QB TO RUN'):'');}
+ else if(G.phase==='live'){h=M?'DRAG BACK TO AIM · RELEASE TO THROW · RIGHT-CLICK FOR '+((aim?aim.bullet:nextBullet)?'REGULAR':'BULLET'):'PULL BACK TO AIM · RELEASE TO THROW · 2ND FINGER = BULLET';h2=(P.runners.length?`${TAPW} ${P.runners.map(DL).join('/')} TO HAND OFF`:'')+(G.rushOn?(P.runners.length?' · ':'')+(M?'DRAG FORWARD, AIM BACKWARD OR CLICK QB TO RUN':'PUSH FORWARD, AIM BACKWARD OR TAP QB TO RUN'):'');}
  else if(G.phase==='run'){h=M?'W/S OR UP/DOWN TO STEER · SPACE = JUKE':'HOLD + DRAG TO STEER · FLICK UP/DOWN = JUKE';h2=M?'A = STUTTER · D = BURST · OR DRAG + FLICK LIKE ON A PHONE':'FLICK BACK = STUTTER · FLICK FORWARD = BURST';}
  if(h)txt(h,W/2,y,'#e6e9f2','center',6);if(h2)txt(h2,W/2,y+10,'#8a93b0','center',6);
  if(G.phase==='live')txt(spotText()+' · '+P.name.toUpperCase(),W/2,y+20,'#5d6680','center',6);
@@ -1502,6 +1510,8 @@ function drawBall(){
  const spin=Math.floor(T*20)%2;R(sx-2,sy-6-h,4,3,'#8b4513');R(sx-1+spin,sy-5-h,1,1,'#fff');
 }
 function drawAim(){
+ // bullet picked before aiming: tag the QB so you know the next throw is a bullet
+ if(!aim&&nextBullet&&QBP&&BALL&&BALL.st==='qb'&&(G.phase==='pre'||G.phase==='live'))txt('BULLET',sxOf(QBP.pos[1]),syOf(QBP.pos[0])+3,'#ff6b6b','center',6);
  if(!aim||G.phase!=='live')return;const to=aimTarget(aim);const from=QBP.pos;const arc=ballArc(from,to,aim.bullet);
  if(to[1]<from[1]-1){const tx=sxOf(to[1]),ty=syOf(to[0]),g=G.rushOn?'#3fe08c':'#ff8a8a';ctx.strokeStyle=g;ctx.lineWidth=1;ctx.strokeRect(tx-4.5,ty-4.5,9,9);txt(G.rushOn?'QB RUN':'NO RUSH',tx,ty+7,g,'center',6);return}
  for(let i=1;i<=14;i++){const f=i/15;const a=from[0]+(to[0]-from[0])*f,dd=from[1]+(to[1]-from[1])*f;const h=arc.apex*4*f*(1-f);R(sxOf(dd),syOf(a)-6-h,2,2,i%2?'#fff':(aim.bullet?'#ff6b6b':'#ffd23f'))}
@@ -1760,7 +1770,7 @@ function tryDraft(){
 }
 function endPractice(){if(!G.practice)return;Object.assign(G,JSON.parse(G.practice.saved));G.practice=null;$('#chg').textContent='◀ PLAYS'}
 function backToMaker(){hideBanner();endPractice();openMaker()}
-function againPractice(){hideBanner();G.los=20;G.mode='normal';const sl=G.practice.study;if(sl){COVK=sl.cov;G.rushOn=sl.rush}setupPlay(G.practice.play,!!sl);G.phase='pre';$('#preBar').classList.add('on')}
+function againPractice(){hideBanner();nextBullet=false;G.los=20;G.mode='normal';const sl=G.practice.study;if(sl){COVK=sl.cov;G.rushOn=sl.rush}setupPlay(G.practice.play,!!sl);G.phase='pre';$('#preBar').classList.add('on')}
 // --- maker input ---
 (function(){
  const mkc=$('#mk');
