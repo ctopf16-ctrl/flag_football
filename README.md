@@ -44,6 +44,8 @@ Open the link and turn your phone sideways. For the best experience, add it to y
 
 Your plays from the play maker, keep/toss picks, route tweaks and settings are saved in your browser on the device you play on. They don't sync between devices.
 
+The first time the game opens on a device, My Plays starts with the plays drawn in the original version, and the New Plays already kept (Mesh, Dagger, Bunch Spot) are in the playbook. After that, your own changes on that device win.
+
 ## How it's built
 
 The whole game is one file, [`index.html`](index.html): plain HTML, CSS and JavaScript with a canvas for the field. The music and sound effects are generated live with the Web Audio API. There's no build step. Edit the file and push, and GitHub Pages serves the new version.
